@@ -1036,19 +1036,25 @@ export default function AdminDashboard() {
                 <SelectValue placeholder="Choose a user..." />
               </SelectTrigger>
               <SelectContent>
-                {availableUsers.map(user => (
-                  <SelectItem key={user.id} value={user.id}>
-                    <div className="flex items-center gap-2">
-                      <span>{user.name}</span>
-                      <span className="text-muted-foreground text-xs">({user.email})</span>
-                    </div>
-                  </SelectItem>
-                ))}
-                {availableUsers.length === 0 && (
-                  <div className="p-2 text-sm text-muted-foreground text-center">
-                    No available users
+                {users.map(user => (
+                <SelectItem 
+                  key={user.id} 
+                  value={user.id} 
+                  disabled={(user.isPresident && user.id !== selectedClub?.president?.id) || user.isAdmin}
+                >
+                  <div className="flex items-center gap-2">
+                    <span>{user.name}</span>
+                    <span className="text-muted-foreground text-xs">({user.email})</span>
+                    {user.isPresident && <Badge variant="president" className="text-xs ml-2">President</Badge>}
+                    {user.isAdmin && <Badge variant="admin" className="text-xs ml-2">Admin</Badge>}
                   </div>
-                )}
+                </SelectItem>
+              ))}
+              {users.length === 0 && (
+                <div className="p-2 text-sm text-muted-foreground text-center">
+                  No users available
+                </div>
+              )}
               </SelectContent>
             </Select>
           </div>

@@ -185,27 +185,30 @@ export default function Dashboard() {
       return;
     }
 
+    // Fetch events without joining
     const { data: eventsData } = await supabase
       .from("events")
-      .select(`
-        id,
-        title,
-        description,
-        event_date,
-        event_time,
-        location,
-        club_id,
-        clubs (name)
-      `)
+      .select("id, title, description, event_date, event_time, location, club_id")
       .in("club_id", clubIds)
       .gte("event_date", new Date().toISOString().split("T")[0])
       .order("event_date", { ascending: true });
+
+    // Fetch club names separately
+    const { data: clubsData } = await supabase
+      .from("clubs")
+      .select("id, name")
+      .in("id", clubIds);
+
+    const clubNamesMap: Record<string, string> = {};
+    clubsData?.forEach(club => {
+      clubNamesMap[club.id] = club.name;
+    });
 
     const formattedEvents: Event[] = (eventsData || []).map(event => ({
       id: event.id,
       title: event.title,
       description: event.description,
-      club_name: (event.clubs as any)?.name || "",
+      club_name: clubNamesMap[event.club_id] || "",
       club_id: event.club_id,
       event_date: new Date(event.event_date).toLocaleDateString("en-US", { 
         month: "short", day: "numeric", year: "numeric" 
@@ -216,35 +219,41 @@ export default function Dashboard() {
 
     setEvents(formattedEvents);
   };
-
   const fetchNotifications = async () => {
-    const { data } = await supabase
-      .from("notifications")
-      .select(`
-        id,
-        type,
-        title,
-        message,
-        read,
-        created_at,
-        clubs (name)
-      `)
-      .eq("user_id", user?.id)
-      .order("created_at", { ascending: false })
-      .limit(20);
+  // Fetch notifications without joining
+  const { data } = await supabase
+    .from("notifications")
+    .select("id, type, title, message, read, created_at, club_id")
+    .eq("user_id", user?.id)
+    .order("created_at", { ascending: false })
+    .limit(20);
 
-    const formatted: Notification[] = (data || []).map(n => ({
-      id: n.id,
-      type: n.type,
-      title: n.title,
-      message: n.message,
-      club_name: (n.clubs as any)?.name || null,
-      read: n.read,
-      created_at: getTimeAgo(new Date(n.created_at)),
-    }));
+  // Get unique club IDs
+  const clubIds = [...new Set(data?.map(n => n.club_id).filter(Boolean) || [])];
 
-    setNotifications(formatted);
-  };
+  // Fetch club names separately
+  const { data: clubsData } = await supabase
+    .from("clubs")
+    .select("id, name")
+    .in("id", clubIds);
+
+  const clubNamesMap: Record<string, string> = {};
+  clubsData?.forEach(club => {
+    clubNamesMap[club.id] = club.name;
+  });
+
+  const formatted: Notification[] = (data || []).map(n => ({
+    id: n.id,
+    type: n.type,
+    title: n.title,
+    message: n.message,
+    club_name: n.club_id ? clubNamesMap[n.club_id] : null,
+    read: n.read,
+    created_at: getTimeAgo(new Date(n.created_at)),
+  }));
+
+  setNotifications(formatted);
+};
 
   const getTimeAgo = (date: Date): string => {
     const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
@@ -283,53 +292,55 @@ export default function Dashboard() {
     fetchClubs();
   };
 
-  const handleViewClub = async (club: Club) => {
-    setSelectedClub(club);
-    setIsClubDialogOpen(true);
+const handleViewClub = async (club: Club) => {
+  setSelectedClub(club);
+  setIsClubDialogOpen(true);
 
-    // Fetch club members
-    const { data } = await supabase
-      .from("club_memberships")
-      .select(`
-        id,
-        requested_at,
-        profiles (id, full_name, email),
-        club_roles (name)
-      `)
-      .eq("club_id", club.id)
-      .eq("status", "accepted");
+  // Fetch all club members (regardless of status)
+  const { data } = await supabase
+    .from("club_memberships")
+    .select(`
+      id,
+      requested_at,
+      status,
+      profiles (id, full_name, email),
+      club_roles (name)
+    `)
+    .eq("club_id", club.id);
+  // Removed: .eq("status", "accepted")
 
-    const members: ClubMember[] = (data || []).map(m => ({
-      id: (m.profiles as any)?.id || "",
-      full_name: (m.profiles as any)?.full_name || "",
-      email: (m.profiles as any)?.email || "",
-      role_name: (m.club_roles as any)?.name || "Member",
-      requested_at: new Date(m.requested_at).toLocaleDateString("en-US", { 
-        month: "short", year: "numeric" 
-      }),
-    }));
+  const members: ClubMember[] = (data || []).map(m => ({
+    id: (m.profiles as any)?.id || "",
+    full_name: (m.profiles as any)?.full_name || "",
+    email: (m.profiles as any)?.email || "",
+    role_name: (m.club_roles as any)?.name || "Member",
+    requested_at: new Date(m.requested_at).toLocaleDateString("en-US", { 
+      month: "short", year: "numeric" 
+    }),
+    status: m.status, // Optional: include status if you need to display it
+  }));
 
-    // Add president to the list if not already there
-    if (club.president_id) {
-      const presidentExists = members.some(m => m.id === club.president_id);
-      if (!presidentExists && club.president_name) {
-        members.unshift({
-          id: club.president_id,
-          full_name: club.president_name,
-          email: "",
-          role_name: "President",
-          requested_at: "",
-        });
-      } else {
-        const presidentIdx = members.findIndex(m => m.id === club.president_id);
-        if (presidentIdx > -1) {
-          members[presidentIdx].role_name = "President";
-        }
+  // Add president to the list if not already there
+  if (club.president_id) {
+    const presidentExists = members.some(m => m.id === club.president_id);
+    if (!presidentExists && club.president_name) {
+      members.unshift({
+        id: club.president_id,
+        full_name: club.president_name,
+        email: "",
+        role_name: "President",
+        requested_at: "",
+      });
+    } else {
+      const presidentIdx = members.findIndex(m => m.id === club.president_id);
+      if (presidentIdx > -1) {
+        members[presidentIdx].role_name = "President";
       }
     }
+  }
 
-    setClubMembers(members);
-  };
+  setClubMembers(members);
+};
 
   const markAllAsRead = async () => {
     await supabase
@@ -673,23 +684,23 @@ export default function Dashboard() {
                     </div>
                   </CardContent>
                   <CardFooter>
-                    {!club.membership_status ? (
-                      <Button className="w-full" onClick={() => handleJoinRequest(club.id, club.name)}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Request to Join
-                      </Button>
-                    ) : club.membership_status === "accepted" ? (
-                      <Button 
-                        variant="secondary" 
-                        className="w-full"
-                        onClick={() => handleViewClub(club)}
-                      >
-                        View Club
-                      </Button>
-                    ) : (
-                      <Button variant="outline" className="w-full" disabled>
-                        Request Pending
-                      </Button>
+                    {!club.membership_status || club.membership_status === "rejected" ? (
+                  <Button className="w-full" onClick={() => handleJoinRequest(club.id, club.name)}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Request to Join
+                  </Button>
+                ) : club.membership_status === "accepted" ? (
+                  <Button 
+                    variant="secondary" 
+                    className="w-full"
+                    onClick={() => handleViewClub(club)}
+                  >
+                    View Club
+                  </Button>
+                ) : (
+                  <Button variant="outline" className="w-full" disabled>
+                    Request Pending
+                  </Button>
                     )}
                   </CardFooter>
                 </Card>

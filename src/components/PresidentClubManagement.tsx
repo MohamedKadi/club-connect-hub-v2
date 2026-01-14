@@ -242,7 +242,7 @@ export default function PresidentClubManagement({ userId, onDataChange }: Props)
   const handleReject = async (requestId: string, userName: string) => {
     const { error } = await supabase
       .from("club_memberships")
-      .update({ status: "rejected", responded_at: new Date().toISOString() })
+      .delete()
       .eq("id", requestId);
 
     if (error) {
@@ -439,7 +439,7 @@ export default function PresidentClubManagement({ userId, onDataChange }: Props)
       .from("club_memberships")
       .delete()
       .eq("id", selectedMember.membership_id);
-
+    console.log(error)
     if (error) {
       toast({
         title: "Error",
