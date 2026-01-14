@@ -14,10 +14,6 @@
 - [Supabase / Database](#supabase--database)
 - [Scripts](#scripts)
 - [Project structure](#project-structure)
-- [Development notes](#development-notes)
-- [Deployment](#deployment)
-- [Contributing](#contributing)
-- [License & Contact](#license--contact)
 
 ---
 
